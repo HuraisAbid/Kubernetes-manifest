@@ -19,7 +19,8 @@ jobs:
       frontend_changed: ${{ steps.detect.outputs.frontend }}
       backend_changed: ${{ steps.detect.outputs.backend }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -27,14 +28,14 @@ jobs:
         id: detect
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           FRONTEND=false
           BACKEND=false
 
-          echo "Detecting changes between commits..."
+          echo "🔍 Detecting changes..."
 
-          # Handle first commit / edge cases safely
+          # Determine diff range safely
           if git rev-parse HEAD~1 >/dev/null 2>&1; then
             DIFF_RANGE="HEAD~1 HEAD"
           else
@@ -42,21 +43,23 @@ jobs:
           fi
 
           echo "Diff range: $DIFF_RANGE"
-          git diff --name-only $DIFF_RANGE || true
+          CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
+          echo "$CHANGED_FILES"
 
-          if git diff --name-only $DIFF_RANGE | grep -q '^frontend/'; then
+          # Case-insensitive & folder-safe detection
+          if echo "$CHANGED_FILES" | grep -qi '^frontend/'; then
             FRONTEND=true
           fi
 
-          if git diff --name-only $DIFF_RANGE | grep -q '^backend/'; then
+          if echo "$CHANGED_FILES" | grep -qi '^backend/'; then
             BACKEND=true
           fi
 
-          echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
-          echo "backend=$BACKEND" >> $GITHUB_OUTPUT
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
 
-          echo "Frontend changed: $FRONTEND"
-          echo "Backend changed:  $BACKEND"
+          echo "✅ Frontend changed: $FRONTEND"
+          echo "✅ Backend changed:  $BACKEND"
 
 # =====================================================
 # 2. Build Frontend (ONLY IF FRONTEND CHANGED)
@@ -70,7 +73,7 @@ jobs:
 
       - name: Build & Push Frontend Image
         run: |
-          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG frontend
+          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG ./frontend
           docker push $FRONTEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
@@ -85,7 +88,7 @@ jobs:
 
       - name: Build & Push Backend Image
         run: |
-          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG backend
+          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG ./backend
           docker push $BACKEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
@@ -97,7 +100,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - name: Deploy Frontend via Helm
+        run: |
           helm upgrade --install frontend helm/app \
             --namespace devops \
             --create-namespace \
@@ -113,7 +117,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - name: Deploy Backend via Helm
+        run: |
           helm upgrade --install backend helm/app \
             --namespace devops \
             --create-namespace \
