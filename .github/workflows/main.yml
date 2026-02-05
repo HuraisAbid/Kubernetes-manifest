@@ -1,0 +1,125 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'helm/**'
+
+env:
+  REGISTRY: docker.io
+  FRONTEND_IMAGE: abidhurais/helm-manifest-frontend
+  BACKEND_IMAGE: abidhurais/helm-manifest-backend
+  NUMERIC_TAG: ${{ github.run_number }}   # automatically increments per GitHub run
+
+jobs:
+
+  build-frontend:
+    name: Build & Scan Frontend
+    if: ${{ contains(join(github.event.head_commit.modified, ' '), 'frontend/') }}
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- SonarQube On-Prem Scan ----------
+      - name: SonarQube Scan Frontend
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=frontend \
+            -Dsonar.sources=frontend \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+      # ---------- Trivy Security Scan ----------
+      - name: Trivy Scan Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: ./frontend
+          severity: HIGH,CRITICAL
+
+      # ---------- Docker Login ----------
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ---------- Build & Push Docker Images ----------
+      - name: Build & Push Frontend Docker Images
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ env.NUMERIC_TAG }}
+
+  build-backend:
+    name: Build & Scan Backend
+    if: ${{ contains(join(github.event.head_commit.modified, ' '), 'backend/') }}
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- SonarQube On-Prem Scan ----------
+      - name: SonarQube Scan Backend
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=backend \
+            -Dsonar.sources=backend \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+      # ---------- Trivy Security Scan ----------
+      - name: Trivy Scan Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: ./backend
+          severity: HIGH,CRITICAL
+
+      # ---------- Docker Login ----------
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ---------- Build & Push Docker Images ----------
+      - name: Build & Push Backend Docker Images
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ env.NUMERIC_TAG }}
+
+  deploy:
+    name: Deploy to Kubernetes via Helm
+    runs-on: self-hosted
+    needs:
+      - build-frontend
+      - build-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- Configure kubectl ----------
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > ~/.kube/config
+
+      # ---------- Helm Upgrade/Deploy ----------
+      - name: Helm Upgrade Deploy
+        run: |
+          helm upgrade --install devops-app helm/app \
+            --namespace devops \
+            --create-namespace \
+            --set frontend.image=${{ env.FRONTEND_IMAGE }} \
+            --set frontend.tag=${{ env.NUMERIC_TAG }} \
+            --set backend.image=${{ env.BACKEND_IMAGE }} \
+            --set backend.tag=${{ env.NUMERIC_TAG }}
