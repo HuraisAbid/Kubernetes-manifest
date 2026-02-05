@@ -73,7 +73,7 @@ jobs:
 
       - name: Build & Push Frontend Image
         run: |
-          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG ./frontend
+          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG ./Frontend
           docker push $FRONTEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
@@ -88,7 +88,7 @@ jobs:
 
       - name: Build & Push Backend Image
         run: |
-          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG ./backend
+          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG ./Backend
           docker push $BACKEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
