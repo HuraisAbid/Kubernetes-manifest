@@ -168,6 +168,7 @@ jobs:
         run: |
           if ! command -v helm &> /dev/null; then
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
       - name: Deploy Backend via Helm
         run: |
           helm upgrade --install backend helm/app \
