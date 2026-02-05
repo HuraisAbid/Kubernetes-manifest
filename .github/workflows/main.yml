@@ -5,12 +5,14 @@ on:
     branches: [main]
 
 env:
-  DOCKER_REPO: abidhurais/helm-manifests   # Single repo for all images
+  DOCKER_REPO: abidhurais/helm-manifests
   NUMERIC_TAG: ${{ github.run_number }}
+  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
 # =====================================================
-# 1. Detect Changes (SOURCE OF TRUTH)
+# 1. Detect Changes (case-insensitive)
 # =====================================================
   detect-changes:
     runs-on: self-hosted
@@ -18,8 +20,7 @@ jobs:
       frontend_changed: ${{ steps.detect.outputs.frontend }}
       backend_changed: ${{ steps.detect.outputs.backend }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -44,11 +45,12 @@ jobs:
           CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
           echo "$CHANGED_FILES"
 
-          if echo "$CHANGED_FILES" | grep -qi '^frontend/'; then
+          # Case-insensitive detection
+          if echo "$CHANGED_FILES" | grep -iq '^Frontend/'; then
             FRONTEND=true
           fi
 
-          if echo "$CHANGED_FILES" | grep -qi '^backend/'; then
+          if echo "$CHANGED_FILES" | grep -iq '^Backend/'; then
             BACKEND=true
           fi
 
@@ -67,6 +69,21 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+
+      - name: SonarQube Scan Frontend
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=frontend \
+            -Dsonar.sources=Frontend \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.login=$SONAR_TOKEN
+
+      - name: Trivy Scan Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: Frontend
+          severity: HIGH,CRITICAL
 
       - name: Docker Login
         uses: docker/login-action@v3
@@ -89,6 +106,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: SonarQube Scan Backend
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=backend \
+            -Dsonar.sources=Backend \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.login=$SONAR_TOKEN
+
+      - name: Trivy Scan Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: Backend
+          severity: HIGH,CRITICAL
+
       - name: Docker Login
         uses: docker/login-action@v3
         with:
@@ -101,14 +133,19 @@ jobs:
           docker push $DOCKER_REPO:backend-$NUMERIC_TAG
 
 # =====================================================
-# 4. Deploy Frontend (ONLY IF FRONTEND CHANGED)
+# 4. Deploy Frontend
 # =====================================================
   deploy-frontend:
-    needs: [detect-changes, build-frontend]
+    needs: [build-frontend]
     if: needs.detect-changes.outputs.frontend_changed == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure Helm installed
+        run: |
+          if ! command -v helm &> /dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
       - name: Deploy Frontend via Helm
         run: |
           helm upgrade --install frontend helm/app \
@@ -118,14 +155,19 @@ jobs:
             --set frontend.tag=frontend-$NUMERIC_TAG
 
 # =====================================================
-# 5. Deploy Backend (ONLY IF BACKEND CHANGED)
+# 5. Deploy Backend
 # =====================================================
   deploy-backend:
-    needs: [detect-changes, build-backend]
+    needs: [build-backend]
     if: needs.detect-changes.outputs.backend_changed == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure Helm installed
+        run: |
+          if ! command -v helm &> /dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
       - name: Deploy Backend via Helm
         run: |
           helm upgrade --install backend helm/app \
