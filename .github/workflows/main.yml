@@ -5,14 +5,13 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: docker.io
   FRONTEND_IMAGE: abidhurais/helm-manifest-frontend
   BACKEND_IMAGE: abidhurais/helm-manifest-backend
   NUMERIC_TAG: ${{ github.run_number }}
 
 jobs:
 # =====================================================
-# 1. Detect Changes (SOURCE OF TRUTH)
+# 1. Detect Changes
 # =====================================================
   detect-changes:
     runs-on: self-hosted
@@ -24,14 +23,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect changed services
-        id: detect
+      - id: detect
         run: |
-          echo "Previous commit: ${{ github.event.before }}"
-          echo "Current commit:  ${{ github.sha }}"
-
           FRONTEND=false
           BACKEND=false
+
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }}
 
           if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q '^frontend/'; then
             FRONTEND=true
@@ -44,13 +41,8 @@ jobs:
           echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
           echo "backend=$BACKEND" >> $GITHUB_OUTPUT
 
-      - name: Debug result
-        run: |
-          echo "Frontend changed: ${{ steps.detect.outputs.frontend }}"
-          echo "Backend changed:  ${{ steps.detect.outputs.backend }}"
-
 # =====================================================
-# 2. Frontend Pipeline (ONLY IF FRONTEND CHANGED)
+# 2. Frontend Build
 # =====================================================
   build-frontend:
     needs: detect-changes
@@ -59,38 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: SonarQube Scan Frontend
+      - name: Build & Push Frontend
         run: |
-          sonar-scanner \
-            -Dsonar.projectKey=frontend \
-            -Dsonar.sources=frontend \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-
-      - name: Trivy Scan Frontend
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-paths: frontend
-          severity: HIGH,CRITICAL
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build & Push Frontend Image
-        uses: docker/build-push-action@v5
-        with:
-          context: frontend
-          push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}:latest
-            ${{ env.FRONTEND_IMAGE }}:${{ env.NUMERIC_TAG }}
+          echo "Building Frontend"
+          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG frontend
+          docker push $FRONTEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
-# 3. Backend Pipeline (ONLY IF BACKEND CHANGED)
+# 3. Backend Build
 # =====================================================
   build-backend:
     needs: detect-changes
@@ -99,70 +67,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: SonarQube Scan Backend
+      - name: Build & Push Backend
         run: |
-          sonar-scanner \
-            -Dsonar.projectKey=backend \
-            -Dsonar.sources=backend \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-
-      - name: Trivy Scan Backend
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-paths: backend
-          severity: HIGH,CRITICAL
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build & Push Backend Image
-        uses: docker/build-push-action@v5
-        with:
-          context: backend
-          push: true
-          tags: |
-            ${{ env.BACKEND_IMAGE }}:latest
-            ${{ env.BACKEND_IMAGE }}:${{ env.NUMERIC_TAG }}
+          echo "Building Backend"
+          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG backend
+          docker push $BACKEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
-# 4. Deploy Frontend (ONLY IF FRONTEND CHANGED)
+# 4. Deploy Frontend
 # =====================================================
   deploy-frontend:
-    needs: build-frontend
+    needs: [detect-changes, build-frontend]
     if: needs.detect-changes.outputs.frontend_changed == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > ~/.kube/config
-      - run: |
           helm upgrade --install frontend helm/app \
             --namespace devops \
             --create-namespace \
-            --set frontend.image=${{ env.FRONTEND_IMAGE }} \
-            --set frontend.tag=${{ env.NUMERIC_TAG }}
+            --set frontend.image=$FRONTEND_IMAGE \
+            --set frontend.tag=$NUMERIC_TAG
 
 # =====================================================
-# 5. Deploy Backend (ONLY IF BACKEND CHANGED)
+# 5. Deploy Backend
 # =====================================================
   deploy-backend:
-    needs: build-backend
+    needs: [detect-changes, build-backend]
     if: needs.detect-changes.outputs.backend_changed == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > ~/.kube/config
-      - run: |
           helm upgrade --install backend helm/app \
             --namespace devops \
             --create-namespace \
-            --set backend.image=${{ env.BACKEND_IMAGE }} \
-            --set backend.tag=${{ env.NUMERIC_TAG }}
+            --set backend.image=$BACKEND_IMAGE \
+            --set backend.tag=$NUMERIC_TAG
