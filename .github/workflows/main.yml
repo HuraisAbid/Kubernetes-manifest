@@ -45,11 +45,10 @@ jobs:
           CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
           echo "$CHANGED_FILES"
 
-          # Case-insensitive detection
+          # Case-insensitive detection for uppercase/lowercase folder names
           if echo "$CHANGED_FILES" | grep -iq '^Frontend/'; then
             FRONTEND=true
           fi
-
           if echo "$CHANGED_FILES" | grep -iq '^Backend/'; then
             BACKEND=true
           fi
@@ -61,7 +60,7 @@ jobs:
           echo "✅ Backend changed:  $BACKEND"
 
 # =====================================================
-# 2. Build Frontend (ONLY IF FRONTEND CHANGED)
+# 2. Build Frontend
 # =====================================================
   build-frontend:
     needs: detect-changes
@@ -70,9 +69,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ---- SonarQube scan using Docker to avoid PATH issues ----
       - name: SonarQube Scan Frontend
         run: |
-          sonar-scanner \
+          docker run --rm \
+            -e SONAR_HOST_URL=$SONAR_HOST_URL \
+            -e SONAR_LOGIN=$SONAR_TOKEN \
+            -v "${{ github.workspace }}:/usr/src" \
+            sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=frontend \
             -Dsonar.sources=Frontend \
             -Dsonar.host.url=$SONAR_HOST_URL \
@@ -97,7 +101,7 @@ jobs:
           docker push $DOCKER_REPO:frontend-$NUMERIC_TAG
 
 # =====================================================
-# 3. Build Backend (ONLY IF BACKEND CHANGED)
+# 3. Build Backend
 # =====================================================
   build-backend:
     needs: detect-changes
@@ -108,7 +112,11 @@ jobs:
 
       - name: SonarQube Scan Backend
         run: |
-          sonar-scanner \
+          docker run --rm \
+            -e SONAR_HOST_URL=$SONAR_HOST_URL \
+            -e SONAR_LOGIN=$SONAR_TOKEN \
+            -v "${{ github.workspace }}:/usr/src" \
+            sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=backend \
             -Dsonar.sources=Backend \
             -Dsonar.host.url=$SONAR_HOST_URL \
@@ -141,11 +149,13 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+
       - name: Ensure Helm installed
         run: |
           if ! command -v helm &> /dev/null; then
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           fi
+
       - name: Deploy Frontend via Helm
         run: |
           helm upgrade --install frontend helm/app \
@@ -163,11 +173,13 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+
       - name: Ensure Helm installed
         run: |
           if ! command -v helm &> /dev/null; then
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           fi
+
       - name: Deploy Backend via Helm
         run: |
           helm upgrade --install backend helm/app \
