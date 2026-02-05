@@ -146,8 +146,6 @@ jobs:
       - name: Deploy Frontend via Helm
         run: |
           helm upgrade --install frontend helm/app \
-            --namespace devops \
-            --create-namespace \
             --set frontend.image=$DOCKER_REPO \
             --set frontend.tag=frontend-$NUMERIC_TAG
 
