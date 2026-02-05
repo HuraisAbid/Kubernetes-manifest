@@ -15,7 +15,7 @@ jobs:
   # Step 1: Detect Changes
   # -------------------------
   filter-changes:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: self-hosted
     outputs:
       frontend_changed: ${{ steps.filter.outputs.frontend }}
       backend_changed: ${{ steps.filter.outputs.backend }}
@@ -38,7 +38,7 @@ jobs:
   build-frontend:
     needs: filter-changes
     if: ${{ needs.filter-changes.outputs.frontend_changed == 'true' }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -127,7 +127,7 @@ jobs:
     needs:
       - build-frontend
       - build-backend
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
