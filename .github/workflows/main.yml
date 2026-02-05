@@ -45,7 +45,6 @@ jobs:
           CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
           echo "$CHANGED_FILES"
 
-          # Case-insensitive detection for uppercase/lowercase folder names
           if echo "$CHANGED_FILES" | grep -iq '^Frontend/'; then
             FRONTEND=true
           fi
@@ -69,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ---- SonarQube scan using Docker to avoid PATH issues ----
+      # ---- Optimized SonarQube scan ----
       - name: SonarQube Scan Frontend
         run: |
           docker run --rm \
@@ -80,7 +79,9 @@ jobs:
             -Dsonar.projectKey=frontend \
             -Dsonar.sources=Frontend \
             -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.exclusions=**/*.html,**/*.md,**/docs/**,**/helm/**,**/.github/** \
+            -Dsonar.inclusions=Frontend/**/*.js,Frontend/**/*.css
 
       - name: Trivy Scan Frontend
         uses: aquasecurity/trivy-action@master
@@ -110,6 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ---- Optimized SonarQube scan ----
       - name: SonarQube Scan Backend
         run: |
           docker run --rm \
@@ -120,7 +122,9 @@ jobs:
             -Dsonar.projectKey=backend \
             -Dsonar.sources=Backend \
             -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.exclusions=**/*.html,**/*.md,**/docs/**,**/helm/**,**/.github/** \
+            -Dsonar.inclusions=Backend/**/*.js
 
       - name: Trivy Scan Backend
         uses: aquasecurity/trivy-action@master
@@ -150,6 +154,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ---- Set up Kubeconfig from secret ----
+      - name: Set up Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 --decode > $HOME/.kube/config
+          export KUBECONFIG=$HOME/.kube/config
+
       - name: Ensure Helm installed
         run: |
           if ! command -v helm &> /dev/null; then
@@ -173,6 +184,13 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+
+      # ---- Set up Kubeconfig from secret ----
+      - name: Set up Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 --decode > $HOME/.kube/config
+          export KUBECONFIG=$HOME/.kube/config
 
       - name: Ensure Helm installed
         run: |
