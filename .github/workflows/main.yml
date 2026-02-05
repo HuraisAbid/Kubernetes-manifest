@@ -11,7 +11,7 @@ env:
 
 jobs:
 # =====================================================
-# 1. Detect Changes
+# 1. Detect Changes (SOURCE OF TRUTH)
 # =====================================================
   detect-changes:
     runs-on: self-hosted
@@ -23,26 +23,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - id: detect
+      - name: Detect changed services
+        id: detect
+        shell: bash
         run: |
+          set -e
+
           FRONTEND=false
           BACKEND=false
 
-          git diff --name-only ${{ github.event.before }} ${{ github.sha }}
+          echo "Detecting changes between commits..."
 
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q '^frontend/'; then
+          # Handle first commit / edge cases safely
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            DIFF_RANGE="HEAD~1 HEAD"
+          else
+            DIFF_RANGE="HEAD"
+          fi
+
+          echo "Diff range: $DIFF_RANGE"
+          git diff --name-only $DIFF_RANGE || true
+
+          if git diff --name-only $DIFF_RANGE | grep -q '^frontend/'; then
             FRONTEND=true
           fi
 
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q '^backend/'; then
+          if git diff --name-only $DIFF_RANGE | grep -q '^backend/'; then
             BACKEND=true
           fi
 
           echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
           echo "backend=$BACKEND" >> $GITHUB_OUTPUT
 
+          echo "Frontend changed: $FRONTEND"
+          echo "Backend changed:  $BACKEND"
+
 # =====================================================
-# 2. Frontend Build
+# 2. Build Frontend (ONLY IF FRONTEND CHANGED)
 # =====================================================
   build-frontend:
     needs: detect-changes
@@ -51,14 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build & Push Frontend
+      - name: Build & Push Frontend Image
         run: |
-          echo "Building Frontend"
           docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG frontend
           docker push $FRONTEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
-# 3. Backend Build
+# 3. Build Backend (ONLY IF BACKEND CHANGED)
 # =====================================================
   build-backend:
     needs: detect-changes
@@ -67,14 +83,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build & Push Backend
+      - name: Build & Push Backend Image
         run: |
-          echo "Building Backend"
           docker build -t $BACKEND_IMAGE:$NUMERIC_TAG backend
           docker push $BACKEND_IMAGE:$NUMERIC_TAG
 
 # =====================================================
-# 4. Deploy Frontend
+# 4. Deploy Frontend (ONLY IF FRONTEND CHANGED)
 # =====================================================
   deploy-frontend:
     needs: [detect-changes, build-frontend]
@@ -90,7 +105,7 @@ jobs:
             --set frontend.tag=$NUMERIC_TAG
 
 # =====================================================
-# 5. Deploy Backend
+# 5. Deploy Backend (ONLY IF BACKEND CHANGED)
 # =====================================================
   deploy-backend:
     needs: [detect-changes, build-backend]
