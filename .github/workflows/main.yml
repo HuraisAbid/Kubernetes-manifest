@@ -5,8 +5,7 @@ on:
     branches: [main]
 
 env:
-  FRONTEND_IMAGE: abidhurais/helm-manifest-frontend
-  BACKEND_IMAGE: abidhurais/helm-manifest-backend
+  DOCKER_REPO: abidhurais/helm-manifests   # Single repo for all images
   NUMERIC_TAG: ${{ github.run_number }}
 
 jobs:
@@ -35,7 +34,6 @@ jobs:
 
           echo "🔍 Detecting changes..."
 
-          # Determine diff range safely
           if git rev-parse HEAD~1 >/dev/null 2>&1; then
             DIFF_RANGE="HEAD~1 HEAD"
           else
@@ -46,7 +44,6 @@ jobs:
           CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
           echo "$CHANGED_FILES"
 
-          # Case-insensitive & folder-safe detection
           if echo "$CHANGED_FILES" | grep -qi '^frontend/'; then
             FRONTEND=true
           fi
@@ -71,10 +68,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build & Push Frontend Image
         run: |
-          docker build -t $FRONTEND_IMAGE:$NUMERIC_TAG ./Frontend
-          docker push $FRONTEND_IMAGE:$NUMERIC_TAG
+          docker build -t $DOCKER_REPO:frontend-$NUMERIC_TAG ./Frontend
+          docker push $DOCKER_REPO:frontend-$NUMERIC_TAG
 
 # =====================================================
 # 3. Build Backend (ONLY IF BACKEND CHANGED)
@@ -86,10 +89,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build & Push Backend Image
         run: |
-          docker build -t $BACKEND_IMAGE:$NUMERIC_TAG ./Backend
-          docker push $BACKEND_IMAGE:$NUMERIC_TAG
+          docker build -t $DOCKER_REPO:backend-$NUMERIC_TAG ./Backend
+          docker push $DOCKER_REPO:backend-$NUMERIC_TAG
 
 # =====================================================
 # 4. Deploy Frontend (ONLY IF FRONTEND CHANGED)
@@ -105,8 +114,8 @@ jobs:
           helm upgrade --install frontend helm/app \
             --namespace devops \
             --create-namespace \
-            --set frontend.image=$FRONTEND_IMAGE \
-            --set frontend.tag=$NUMERIC_TAG
+            --set frontend.image=$DOCKER_REPO \
+            --set frontend.tag=frontend-$NUMERIC_TAG
 
 # =====================================================
 # 5. Deploy Backend (ONLY IF BACKEND CHANGED)
@@ -122,5 +131,5 @@ jobs:
           helm upgrade --install backend helm/app \
             --namespace devops \
             --create-namespace \
-            --set backend.image=$BACKEND_IMAGE \
-            --set backend.tag=$NUMERIC_TAG
+            --set backend.image=$DOCKER_REPO \
+            --set backend.tag=backend-$NUMERIC_TAG
