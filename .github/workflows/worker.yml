@@ -144,10 +144,12 @@ jobs:
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           fi
       - name: Deploy Frontend via Helm
+        shell: bash
         run: |
-          helm upgrade --install frontend helm/app \
-            --set frontend.image=$DOCKER_REPO \
-            --set frontend.tag=frontend-$NUMERIC_TAG
+          helm upgrade --install frontend ./helm/app \
+            --namespace devops \
+            --set frontend.image="${DOCKER_REPO}" \
+            --set frontend.tag="frontend-${NUMERIC_TAG}"
 
 # =====================================================
 # 5. Deploy Backend
