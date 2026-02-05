@@ -1,0 +1,55 @@
+namespace: devops
+
+frontend:
+  name: frontend
+  image: yourdockerhub/frontend
+  tag: latest
+  replicas: 2
+  port: 8080
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "64Mi"
+    limits:
+      cpu: "300m"
+      memory: "128Mi"
+
+backend:
+  name: backend
+  image: yourdockerhub/backend
+  tag: latest
+  replicas: 2
+  port: 3000
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 5
+    cpuUtilization: 70
+
+redis:
+  name: redis
+  image: redis
+  tag: "7"
+  port: 6379
+  storage:
+    size: 1Gi
+    path: /data/redis
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ""
+
+secrets:
+  redisPassword: "dummy-password"
+
