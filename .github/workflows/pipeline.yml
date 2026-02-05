@@ -1,0 +1,173 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+env:
+  DOCKER_REPO: abidhurais/helm-manifest   # <-- FIXED: match Docker Hub repo
+  NUMERIC_TAG: ${{ github.run_number }}
+  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+jobs:
+# =====================================================
+# 1. Detect Changes
+# =====================================================
+  detect-changes:
+    runs-on: self-hosted
+    outputs:
+      frontend_changed: ${{ steps.detect.outputs.frontend }}
+      backend_changed: ${{ steps.detect.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          FRONTEND=false
+          BACKEND=false
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            DIFF_RANGE="HEAD~1 HEAD"
+          else
+            DIFF_RANGE="HEAD"
+          fi
+          CHANGED_FILES=$(git diff --name-only $DIFF_RANGE || true)
+          if echo "$CHANGED_FILES" | grep -iq '^Frontend/'; then FRONTEND=true; fi
+          if echo "$CHANGED_FILES" | grep -iq '^Backend/'; then BACKEND=true; fi
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
+
+# =====================================================
+# 2. Build & Push Frontend
+# =====================================================
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_changed == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SonarQube Scan Frontend
+        run: |
+          docker run --rm \
+            -e SONAR_HOST_URL=$SONAR_HOST_URL \
+            -e SONAR_LOGIN=$SONAR_TOKEN \
+            -v "${{ github.workspace }}:/usr/src" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=frontend \
+            -Dsonar.sources=Frontend \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.exclusions=**/*.html,**/*.md,**/docs/**,**/helm/**,**/.github/** \
+            -Dsonar.inclusions=Frontend/**/*.js,Frontend/**/*.css
+
+      - name: Trivy Scan Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: Frontend
+          severity: HIGH,CRITICAL
+
+      - name: Docker Login & Build Push
+        run: |
+          echo "Logging in to Docker Hub..."
+          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+          echo "Building frontend image..."
+          docker build -t $DOCKER_REPO:frontend-$NUMERIC_TAG ./Frontend
+          docker images
+          echo "Pushing frontend image..."
+          docker push $DOCKER_REPO:frontend-$NUMERIC_TAG
+
+# =====================================================
+# 3. Build & Push Backend
+# =====================================================
+  build-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend_changed == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SonarQube Scan Backend
+        run: |
+          docker run --rm \
+            -e SONAR_HOST_URL=$SONAR_HOST_URL \
+            -e SONAR_LOGIN=$SONAR_TOKEN \
+            -v "${{ github.workspace }}:/usr/src" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=backend \
+            -Dsonar.sources=Backend \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.exclusions=**/*.html,**/*.md,**/docs/**,**/helm/**,**/.github/** \
+            -Dsonar.inclusions=Backend/**/*.js
+
+      - name: Trivy Scan Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-paths: Backend
+          severity: HIGH,CRITICAL
+
+      - name: Docker Login & Build Push
+        run: |
+          echo "Logging in to Docker Hub..."
+          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+          echo "Building backend image..."
+          docker build -t $DOCKER_REPO:backend-$NUMERIC_TAG ./Backend
+          docker images
+          echo "Pushing backend image..."
+          docker push $DOCKER_REPO:backend-$NUMERIC_TAG
+
+# =====================================================
+# 4. Deploy Frontend
+# =====================================================
+  deploy-frontend:
+    needs: [build-frontend]
+    if: needs.detect-changes.outputs.frontend_changed == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 --decode > $HOME/.kube/config
+          export KUBECONFIG=$HOME/.kube/config
+      - name: Ensure Helm installed
+        run: |
+          if ! command -v helm &> /dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      - name: Deploy Frontend via Helm
+        run: |
+          helm upgrade --install frontend helm/app \
+            --namespace devops \
+            --create-namespace \
+            --set frontend.image=$DOCKER_REPO \
+            --set frontend.tag=frontend-$NUMERIC_TAG
+
+# =====================================================
+# 5. Deploy Backend
+# =====================================================
+  deploy-backend:
+    needs: [build-backend]
+    if: needs.detect-changes.outputs.backend_changed == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" | base64 --decode > $HOME/.kube/config
+          export KUBECONFIG=$HOME/.kube/config
+      - name: Deploy Backend via Helm
+        run: |
+          helm upgrade --install backend helm/app \
+            --namespace devops \
+            --create-namespace \
+            --set backend.image=$DOCKER_REPO \
+            --set backend.tag=backend-$NUMERIC_TAG
