@@ -13,11 +13,20 @@ spec:
       labels:
         app: {{ .Values.redis.name }}
     spec:
+      securityContext:
+        runAsNonRoot: {{ .Values.redis.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.redis.securityContext.runAsUser }}
       containers:
       - name: redis
         image: "{{ .Values.redis.image }}:{{ .Values.redis.tag }}"
         ports:
         - containerPort: {{ .Values.redis.port }}
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: REDIS_PASSWORD
         volumeMounts:
         - mountPath: /data
           name: redis-data
@@ -25,4 +34,3 @@ spec:
       - name: redis-data
         persistentVolumeClaim:
           claimName: redis-pvc
-
