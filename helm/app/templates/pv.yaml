@@ -6,7 +6,6 @@ spec:
   capacity:
     storage: {{ .Values.redis.storage.size }}
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   hostPath:
-    path: {{ .Values.redis.storage.path }}
-
+    path: /mnt/redis-data
