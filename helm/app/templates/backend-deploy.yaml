@@ -22,10 +22,10 @@ spec:
         ports:
         - containerPort: {{ .Values.backend.port }}
         envFrom:
-        - configMapRef:
-            name: app-config
         - secretRef:
             name: app-secret
+        - configMapRef:
+            name: app-config
         livenessProbe:
           httpGet:
             path: /api/health
@@ -38,4 +38,3 @@ spec:
           initialDelaySeconds: 5
         resources:
           {{- toYaml .Values.backend.resources | nindent 10 }}
-
