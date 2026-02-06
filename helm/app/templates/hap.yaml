@@ -17,4 +17,3 @@ spec:
       target:
         type: Utilization
         averageUtilization: {{ .Values.backend.hpa.cpuUtilization }}
-
