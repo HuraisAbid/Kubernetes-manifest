@@ -39,8 +39,7 @@ redis:
   port: 6379
   storage:
     size: 1Gi
-    path: /data/redis   # inside the container
-    hostPath: /mnt/redis-data  # on the worker node, must exist
+    path: /data/redis
   resources:
     requests:
       cpu: "100m"
