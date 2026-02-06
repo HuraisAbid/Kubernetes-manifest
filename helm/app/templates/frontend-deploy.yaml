@@ -37,9 +37,9 @@ spec:
         - name: nginx-cache
           mountPath: /var/cache/nginx
         - name: nginx-run
-          mountPath: /run/nginx   # <<< NEW: writable PID dir
+          mountPath: /run/nginx
       volumes:
       - name: nginx-cache
         emptyDir: {}
-      - name: nginx-run        # <<< NEW
+      - name: nginx-run
         emptyDir: {}
