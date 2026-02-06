@@ -36,6 +36,10 @@ spec:
         volumeMounts:
         - name: nginx-cache
           mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /run/nginx   # <<< NEW: writable PID dir
       volumes:
       - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run        # <<< NEW
         emptyDir: {}
