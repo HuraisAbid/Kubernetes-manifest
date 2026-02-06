@@ -24,4 +24,9 @@ COPY index.html /usr/share/nginx/html/
 USER appuser
 
 EXPOSE 8080
+
+# Run nginx in foreground
+CMD ["nginx", "-g", "daemon off;"]
+
+# Healthcheck
 HEALTHCHECK CMD wget -qO- http://localhost:8080 || exit 1
