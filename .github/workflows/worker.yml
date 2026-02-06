@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 env:
-  DOCKER_REPO: abidhurais/helm-manifest   # <-- FIXED: match Docker Hub repo
+  DOCKER_REPO: abidhurais/helm-manifest
   NUMERIC_TAG: ${{ github.run_number }}
   SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -73,15 +73,12 @@ jobs:
           scan-paths: Frontend
           severity: HIGH,CRITICAL
 
-      - name: Docker Login & Build Push
+      - name: Docker Login & Build Push (reliable)
         run: |
-          echo "Logging in to Docker Hub..."
-          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-          echo "Building frontend image..."
+          export DOCKER_BUILDKIT=1
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker build -t $DOCKER_REPO:frontend-$NUMERIC_TAG ./Frontend
-          docker images
-          echo "Pushing frontend image..."
-          docker push $DOCKER_REPO:frontend-$NUMERIC_TAG
+          docker push --max-concurrent-uploads=1 $DOCKER_REPO:frontend-$NUMERIC_TAG
 
 # =====================================================
 # 3. Build & Push Backend
@@ -114,15 +111,12 @@ jobs:
           scan-paths: Backend
           severity: HIGH,CRITICAL
 
-      - name: Docker Login & Build Push
+      - name: Docker Login & Build Push (reliable)
         run: |
-          echo "Logging in to Docker Hub..."
-          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-          echo "Building backend image..."
+          export DOCKER_BUILDKIT=1
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker build -t $DOCKER_REPO:backend-$NUMERIC_TAG ./Backend
-          docker images
-          echo "Pushing backend image..."
-          docker push $DOCKER_REPO:backend-$NUMERIC_TAG
+          docker push --max-concurrent-uploads=1 $DOCKER_REPO:backend-$NUMERIC_TAG
 
 # =====================================================
 # 4. Deploy Frontend
@@ -144,12 +138,11 @@ jobs:
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           fi
       - name: Deploy Frontend via Helm
-        shell: bash
         run: |
           helm upgrade --install frontend ./helm/app \
             --namespace devops \
-            --set frontend.image="${DOCKER_REPO}" \
-            --set frontend.tag="frontend-${NUMERIC_TAG}"
+            --set frontend.image="$DOCKER_REPO" \
+            --set frontend.tag="frontend-$NUMERIC_TAG"
 
 # =====================================================
 # 5. Deploy Backend
@@ -167,8 +160,7 @@ jobs:
           export KUBECONFIG=$HOME/.kube/config
       - name: Deploy Backend via Helm
         run: |
-          helm upgrade --install backend helm/app \
+          helm upgrade --install backend ./helm/app \
             --namespace devops \
-            --create-namespace \
-            --set backend.image=$DOCKER_REPO \
-            --set backend.tag=backend-$NUMERIC_TAG
+            --set backend.image="$DOCKER_REPO" \
+            --set backend.tag="backend-$NUMERIC_TAG"
