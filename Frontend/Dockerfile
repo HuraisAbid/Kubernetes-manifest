@@ -1,15 +1,14 @@
 FROM nginx:alpine
 
-# Create non-root user
+# Non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Create only necessary nginx dirs & set permissions
+# Create required dirs and set permissions
 RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html /etc/nginx \
- && chown -R appuser:appgroup /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html /etc/nginx \
- && chmod 755 /var/cache/nginx /var/run/nginx /var/log/nginx
+ && chown -R appuser:appgroup /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html /etc/nginx
 
 # Copy config & static files
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 COPY index.html /usr/share/nginx/html/
 
 # Switch to non-root
