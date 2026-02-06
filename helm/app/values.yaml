@@ -2,7 +2,7 @@ namespace: devops
 
 frontend:
   name: frontend
-  image: yourdockerhub/frontend
+  image: abidhurais/helm-manifest
   tag: latest
   replicas: 2
   port: 8080
@@ -16,7 +16,7 @@ frontend:
 
 backend:
   name: backend
-  image: yourdockerhub/backend
+  image: abidhurais/helm-manifest
   tag: latest
   replicas: 2
   port: 3000
@@ -39,7 +39,20 @@ redis:
   port: 6379
   storage:
     size: 1Gi
-    path: /data/redis
+    path: /data/redis   # inside the container
+    hostPath: /mnt/redis-data  # on the worker node, must exist
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "300m"
+      memory: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  env:
+    REDIS_PASSWORD: "dummy-password"
 
 securityContext:
   runAsNonRoot: true
@@ -52,4 +65,3 @@ ingress:
 
 secrets:
   redisPassword: "dummy-password"
-
